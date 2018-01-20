@@ -63,6 +63,7 @@ class TodoListViewController: UITableViewController {
             
             // what will happen once the user clicks the add item button on our uialert.
             self.itemArray.append(textField.text!)
+            self.tableView.reloadData()
         }
         
         // alert에 textField를 추가하는 부분.
@@ -70,7 +71,7 @@ class TodoListViewController: UITableViewController {
             
             alertTextField.placeholder = "Create New Item"
             textField = alertTextField
-        }]
+        }
         
         alert.addAction(action)
         present(alert, animated: true, completion: nil)
