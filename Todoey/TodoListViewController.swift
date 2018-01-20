@@ -11,7 +11,7 @@ import UIKit
 // UITableViewController를 상속받고 바로 연결함으로써 따로 delegate할 필요가 없어짐. 짱짱편함.
 class TodoListViewController: UITableViewController {
     
-    let itemArray = ["Fine Mike", "abc", "def"]
+    var itemArray = ["Fine Mike", "abc", "def"]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -52,4 +52,28 @@ class TodoListViewController: UITableViewController {
         // Select 이후 자연스럽게 배경색깔이 사라짐.
         tableView.deselectRow(at: indexPath, animated: true)
     }
+    
+    // MARK - Add new Items
+    @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
+        
+        var textField = UITextField()
+        
+        let alert = UIAlertController(title: "Add New Todoey Item", message: "", preferredStyle: .alert)
+        let action = UIAlertAction(title: "Add Item", style: .default) { (action) in
+            
+            // what will happen once the user clicks the add item button on our uialert.
+            self.itemArray.append(textField.text!)
+        }
+        
+        // alert에 textField를 추가하는 부분.
+        alert.addTextField { (alertTextField) in
+            
+            alertTextField.placeholder = "Create New Item"
+            textField = alertTextField
+        }]
+        
+        alert.addAction(action)
+        present(alert, animated: true, completion: nil)
+    }
+    
 }
