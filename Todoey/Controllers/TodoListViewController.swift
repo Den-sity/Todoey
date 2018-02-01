@@ -15,13 +15,15 @@
  */
 
 import UIKit
-import CoreData
+import RealmSwift
 
 // UITableViewController를 상속받고 바로 연결함으로써 따로 delegate할 필요가 없어짐. 짱짱편함.
 class TodoListViewController: UITableViewController {
     
-    var itemArray = [Item]()
+    var todoItems: Results<Item>?
+    let realm = try! Realm()
     
+    // Item을 추가할 경우, 자동으로 Category를 이어 추가하도록 되어있는 것으로 보임.
     var selectedCategory: Category? {
         
         didSet {
@@ -33,8 +35,6 @@ class TodoListViewController: UITableViewController {
     let defaults = UserDefaults.standard
     // let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
     // UIApplication.shared.delegate : Singleton
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
-
 
     override func viewDidLoad() {
         
@@ -47,18 +47,24 @@ class TodoListViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         
-        return itemArray.count
+        return todoItems?.count ?? 1
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
         let cell = UITableViewCell(style: .default, reuseIdentifier: "ToDoItemCell")
-        let item = itemArray[indexPath.row]
-        // let cell = tableView.dequeueReusableCell(withIdentifier: "ToDoItemCell", for: indexPath)
-        cell.textLabel?.text = item.title
-        
-        // Ternary Operator ==> value = condition ? valueIfTrue : valueIfFalse
-        cell.accessoryType = item.done ? .checkmark : .none
+        if let item = todoItems?[indexPath.row] {
+            
+            // let cell = tableView.dequeueReusableCell(withIdentifier: "ToDoItemCell", for: indexPath)
+            cell.textLabel?.text = item.title
+            
+            // Ternary Operator ==> value = condition ? valueIfTrue : valueIfFalse
+            cell.accessoryType = item.done ? .checkmark : .none
+        }
+        else {
+            
+            cell.textLabel?.text = "No items in here."
+        }
         
         return cell
     }
@@ -66,12 +72,20 @@ class TodoListViewController: UITableViewController {
     // MARK - Tableview Delegate Methods.
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
-        // itemArray[indexPath.row].setValue("Completed", forKey: "title")
-        // itemArray[indexPath.row].done = !itemArray[indexPath.row].done
-        
-        // itemArray.remove(at: indexPath.row)
-        // context.delete(itemArray[indexPath.row])
-        saveItems()
+        // 선택된 값이 nil이 아니라면 값을 설정하고, realm의 done값을 삭제한다.
+        if let item = todoItems?[indexPath.row] {
+            
+            do {
+                try realm.write {
+                    
+                    item.done = !item.done
+                }
+            }
+            catch {
+                
+                print("Error saving done status, \(error)")
+            }
+        }
         
         tableView.reloadData()
         
@@ -87,18 +101,23 @@ class TodoListViewController: UITableViewController {
         let alert = UIAlertController(title: "Add New Todoey Item", message: "", preferredStyle: .alert)
         let action = UIAlertAction(title: "Add Item", style: .default) { (action) in
             
-            // what will happen once the user clicks the add item button on our uialert.
-            let newItem = Item(context: self.context)
-            newItem.title = textField.text!
-            newItem.done = false
-            
-            // In CoreData, we already made a parentCategory realtion.
-            newItem.parentCategory = self.selectedCategory
-            
-            self.itemArray.append(newItem)
-            // self.defaults.set(self.itemArray, forKey: "TodoListArray")
-            
-            self.saveItems()
+            if let currentCategory = self.selectedCategory {
+                
+                do {
+                    try self.realm.write {
+                        
+                        // what will happen once the user clicks the add item button on our uialert.
+                        let newItem = Item()
+                        newItem.title = textField.text!
+                        newItem.dateCreated = Date()
+                        currentCategory.items.append(newItem)
+                    }
+                }
+                catch {
+                    
+                    print("Error saving new items, \(error)")
+                }
+            }
             
             self.tableView.reloadData()
         }
@@ -114,46 +133,10 @@ class TodoListViewController: UITableViewController {
         present(alert, animated: true, completion: nil)
     }
     
-    // Create
-    func saveItems() {
-        
-        
-        do {
-            
-            try context.save()
-        }
-        catch {
-            
-            print("Error saving Context, \(error)")
-        }
-        
-        self.tableView.reloadData()
-    }
-    
     // Read - 변수선언을 안에서 해버림으로써 method의 인풋이 nil이어도 정상작동하도록 변경함.
-    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) {
+    func loadItems() {
         
-        // Request is override. So we have to determine that requests.
-        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
-        
-        if let additionalPredicate = predicate {
-            
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [additionalPredicate, categoryPredicate])
-        }
-        else {
-            
-            request.predicate = categoryPredicate
-        }
-        
-        do {
-            
-            itemArray = try context.fetch(request)
-        }
-        catch {
-            
-            print("Error fetching data from context \(error)")
-        }
-        
+        todoItems = selectedCategory?.items.sorted(byKeyPath: "title", ascending: true)
         tableView.reloadData()
     }
 }
@@ -167,15 +150,10 @@ extension TodoListViewController: UISearchBarDelegate {
     
     //MARK: When the searchBar is clicked
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-        
-        let request: NSFetchRequest<Item> = Item.fetchRequest()
-        
-        // 아래는 Objective-C 문법임. 왜?
-        let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
-        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
-        
-        loadItems(with: request, predicate: predicate)
 
+        // 목록을 가져오고, 맞게 조건을 걸어 조회한 다음에, 소팅까지 한 후 다시 불러오는 것.
+        todoItems = todoItems?.filter("title CONTAINS[cd] %@", searchBar.text!).sorted(byKeyPath: "dateCreated", ascending: true)
+        tableView.reloadData()
     }
     
     // When the text is changed
